@@ -7,7 +7,7 @@ local ADDON_NAME, CCO = ...
 
 -- Addon-wide namespace
 _G["CCO"] = CCO
-CCO.version = "1.0.0"
+CCO.version = "1.5.0"
 CCO.prefix  = "CCO_ORDERS"   -- RegisterAddonMessagePrefix key (max 16 chars)
 
 -- ============================================================
