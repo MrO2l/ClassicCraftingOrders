@@ -15,7 +15,10 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\..\FrameXML\UI.xsd">
 
+    <!-- inherits="BackdropTemplate" is required in TBC Classic Anniversary
+         (Shadowlands-era client) so that SetBackdrop() is available on the frame. -->
     <Frame name="CCO_Dashboard" parent="UIParent"
+           inherits="BackdropTemplate"
            frameStrata="HIGH" hidden="true">
 
         <Size x="360" y="460"/>

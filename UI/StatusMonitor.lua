@@ -38,7 +38,7 @@ end
 -- Frame construction
 -- ============================================================
 function SM:CreateFrame()
-    local f = CreateFrame("Frame", "CCO_StatusMonitor", UIParent)
+    local f = CreateFrame("Frame", "CCO_StatusMonitor", UIParent, "BackdropTemplate")
     f:SetSize(FRAME_W, FRAME_H)
     f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 200)
     f:SetMovable(true)
@@ -121,8 +121,10 @@ function SM:ShowStatus(statusKey, crafterName, order)
     SM.currentOrderID = order and order.id or SM.currentOrderID
 
     -- Cancel any pending auto-hide
+    -- NOTE: C_Timer does NOT exist in TBC Classic (added in WoD). We use an
+    --       OnUpdate frame as a timer instead; "cancel" = clear its OnUpdate.
     if SM.hideTimer then
-        SM.hideTimer:Cancel()
+        SM.hideTimer:SetScript("OnUpdate", nil)
         SM.hideTimer = nil
     end
 
@@ -186,8 +188,18 @@ function SM:ShowStatus(statusKey, crafterName, order)
     SM:PlayAppearAnimation()
 
     if autoHide then
-        SM.hideTimer = C_Timer.NewTimer(FADE_SEC, function()
-            SM:Hide()
+        -- NOTE: C_Timer.NewTimer does NOT exist in TBC Classic.
+        --       Use a plain CreateFrame + OnUpdate as a countdown timer.
+        local timerFrame = SM.hideTimer or CreateFrame("Frame")
+        SM.hideTimer = timerFrame
+        local elapsed = 0
+        timerFrame:SetScript("OnUpdate", function(self, dt)
+            elapsed = elapsed + dt
+            if elapsed >= FADE_SEC then
+                self:SetScript("OnUpdate", nil)
+                SM.hideTimer = nil
+                SM:Hide()
+            end
         end)
     end
 end

@@ -44,7 +44,7 @@ function OB:CreateFrame()
                  + COL_WIDTHS.mats + COL_WIDTHS.action + 28
     local totalH = 60 + 28 + ROW_HEIGHT * ROWS_VISIBLE + 16 + 32
 
-    local f = CreateFrame("Frame", "CCO_OrderBoard", UIParent)
+    local f = CreateFrame("Frame", "CCO_OrderBoard", UIParent, "BackdropTemplate")
     f:SetSize(totalW, totalH)
     f:SetPoint("CENTER")
     f:SetMovable(true)
@@ -236,16 +236,20 @@ function OB:CreateRow(order, index)
     row:SetSize(content:GetWidth(), ROW_HEIGHT - 2)
     row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yOff)
 
-    -- Alternating row background
-    if index % 2 == 0 then
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", tile = true, tileSize = 8 })
-        row:SetBackdropColor(0.1, 0.1, 0.15, 0.4)
-    end
-
-    -- Craftable highlight
+    -- Row background via CreateTexture (works without BackdropTemplate on every row frame)
+    local rowBg = row:CreateTexture(nil, "BACKGROUND")
+    rowBg:SetAllPoints(row)
+    rowBg:SetTexture("Interface\\Buttons\\WHITE8X8")
     if order.canCraft then
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", tile = true, tileSize = 8 })
-        row:SetBackdropColor(0.0, 0.25, 0.0, 0.5)
+        -- Green tint for craftable orders
+        rowBg:SetVertexColor(0.0, 0.35, 0.05)
+        rowBg:SetAlpha(0.5)
+    elseif index % 2 == 0 then
+        -- Subtle stripe for even rows
+        rowBg:SetVertexColor(0.12, 0.12, 0.18)
+        rowBg:SetAlpha(0.4)
+    else
+        rowBg:SetAlpha(0)  -- Odd rows: transparent
     end
 
     -- Item icon + name
@@ -305,8 +309,15 @@ function OB:CreateRow(order, index)
     -- Tooltip on hover
     row:SetScript("OnEnter", function()
         GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-        if order.itemID then
-            GameTooltip:SetItemByID(order.itemID)
+        -- NOTE: GameTooltip:SetItemByID does NOT exist in TBC Classic (added in Legion).
+        --       Use SetHyperlink with the item link returned by GetItemInfo.
+        if order.itemID and order.itemID > 0 then
+            local _, iLink = GetItemInfo(order.itemID)
+            if iLink then
+                GameTooltip:SetHyperlink(iLink)
+            else
+                GameTooltip:SetText(displayName)
+            end
         end
         if order.canCraft then
             GameTooltip:AddLine(CCO.L["CAN_CRAFT"], 0.2, 1, 0.4)
@@ -344,6 +355,11 @@ end
 -- Visibility
 -- ============================================================
 function OB:Toggle()
+    -- Guard: frame may be nil if Initialize() failed
+    if not OB.frame then
+        CCO:PrintError("OrderBoard frame not ready.")
+        return
+    end
     OB.frame:SetShown(not OB.frame:IsShown())
     if OB.frame:IsShown() then
         OB:Refresh()

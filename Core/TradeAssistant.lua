@@ -247,7 +247,10 @@ function TA:GetReagentsForSpell(spellID)
                 for r = 1, numReagents do
                     local rName, _, rCount = GetTradeSkillReagentInfo(i, r)
                     if rName then
-                        local rID = select(6, GetItemInfoInstant(rName))
+                        -- NOTE: GetItemInfoInstant does NOT exist in TBC Classic (added in MoP).
+                        --       Use GetTradeSkillReagentItemLink to resolve item IDs instead.
+                        local rLink = GetTradeSkillReagentItemLink(i, r)
+                        local rID = rLink and tonumber(rLink:match("|Hitem:(%d+):")) or nil
                         if rID then
                             table.insert(reagents, { itemID = rID, count = rCount or 1, name = rName })
                         end

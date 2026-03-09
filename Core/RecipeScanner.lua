@@ -162,15 +162,13 @@ function RS:ReadRecipeAtIndex(index, skillName, skillType)
             local rName, rTexture, rCount, rPlayerCount = GetTradeSkillReagentInfo(index, r)
             if rName then
                 local rItemLink = GetTradeSkillReagentItemLink(index, r)
-                local rItemID
+                local rItemID = 0
                 if rItemLink then
-                    rItemID = tonumber(rItemLink:match("|Hitem:(%d+):"))
+                    rItemID = tonumber(rItemLink:match("|Hitem:(%d+):")) or 0
                 end
-                -- Fallback: try name→ID resolution
-                if not rItemID then
-                    rItemID = select(1, GetItemInfoInstant(rName)) or 0
-                end
-                if rItemID and rItemID > 0 then
+                -- NOTE: GetItemInfoInstant does NOT exist in TBC Classic (added in MoP).
+                --       We rely solely on the item link from GetTradeSkillReagentItemLink.
+                if rItemID > 0 then
                     table.insert(recipe.reagents, { rItemID, rCount or 1, name = rName })
                 end
             end

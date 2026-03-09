@@ -87,7 +87,13 @@ function Comm:ProcessQueue()
     local msg = table.remove(sendQueue, 1)
     local dist = self:GetBestDistribution()
     if dist then
-        C_ChatInfo.SendAddonMessage(PREFIX, msg, dist)
+        -- C_ChatInfo is available in TBC Classic Anniversary (modern client).
+        -- Fall back to the classic global SendAddonMessage if not present.
+        if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+            C_ChatInfo.SendAddonMessage(PREFIX, msg, dist)
+        else
+            SendAddonMessage(PREFIX, msg, dist)
+        end
         lastSendTime = now
     else
         -- No valid channel; put the message back at the front
@@ -100,7 +106,8 @@ function Comm:GetBestDistribution()
     for _, dist in ipairs(DIST_PRIORITY) do
         if dist == "GUILD" and IsInGuild() then return "GUILD" end
         if dist == "RAID"  and IsInRaid()  then return "RAID"  end
-        if dist == "PARTY" and IsInGroup() then return "PARTY" end
+        -- IsInGroup() was added in Cataclysm; TBC Classic uses GetNumPartyMembers()
+        if dist == "PARTY" and (GetNumPartyMembers and GetNumPartyMembers() > 0) then return "PARTY" end
         if dist == "YELL"  then return "YELL" end
     end
     return "YELL"  -- fallback – limited range but always available

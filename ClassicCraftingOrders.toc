@@ -2,7 +2,7 @@
 ## Title: ClassicCraftingOrders
 ## Notes: Peer-to-Peer crafting order system for TBC Classic Anniversary
 ## Author: ClassicCraftingOrders
-## Version: 1.1.0
+## Version: 1.3.0
 ## DefaultState: enabled
 ## SavedVariables: ClassicCraftingOrdersDB
 

@@ -2,7 +2,7 @@
 
 > **Target:** World of Warcraft – The Burning Crusade Classic Anniversary
 > **Interface:** 20504 (TBC 2.5.4)
-> **Version:** 1.1.0
+> **Version:** 1.3.0
 > **Language:** Lua 5.1 / WoW XML
 
 ---
@@ -43,19 +43,20 @@ There is **no server, no external database and no mail automation**. All communi
 | Core networking | ✅ Complete | Throttled send queue, auto-rebroadcast every 120 s |
 | Order lifecycle | ✅ Complete | Post → broadcast → accept → trade → complete |
 | Profession detection | ✅ Fixed (v1.2) | `rank > 0` bug removed; `SKILL_LINES_CHANGED` event added; case-insensitive name fallback |
-| Recipe database (static) | ✅ Complete | ~700 recipes across all 9 crafting professions |
-| Recipe scanner (live) | ✅ Complete | Patches static DB from open tradeskill window |
+| Recipe database (static) | ✅ Complete (v1.3) | **2,092 recipes** across all 9 crafting professions — auto-generated from CraftLib v0.5.0 |
+| Recipe scanner (live) | ✅ Complete | Patches static DB from open tradeskill window; merges by recipe name |
 | Main Dashboard UI | ✅ Fixed (v1.2) | `SetColorTexture` crash fixed; title-bar drag area; solid background |
-| Recipe Browser UI | ✅ Complete | Profession tabs, recipe list, difficulty colours, reagent detail |
+| Recipe Browser UI | ✅ Redesigned (v1.3) | UIDropDownMenu profession picker, full-width recipe list, column headers, coloured source badges |
 | Order Board UI | ✅ Complete | Sortable columns, craftable-only filter, accept button |
 | Status Monitor UI | ✅ Complete | Floating HUD, spin animation, auto-hide on completion |
 | Trade Assistant | ✅ Complete | Bag-slot glow, trade helper overlay |
 | Localization | ✅ enUS + deDE + frFR + esES | Profession names for all four locales |
 | AceDB-3.0 | ✅ Embedded stub | Full plain-Lua fallback path if library unavailable |
+| TBC Classic API compat | ✅ Fixed (v1.2–1.3) | See [Section 9](#9-tbc-classic-api-compatibility) for full list |
 
 ### Open / Planned
 
-- Recipe `minSkill` level is not reliably read from the live scan API (no direct accessor in TBC). Static DB values are used; the scanner fills gaps over time via the difficulty colour heuristic.
+- Recipe `minSkill` level is not reliably read from the live scan API (no direct accessor in TBC). Static DB values (from CraftLib) are used; the scanner fills gaps over time via the difficulty colour heuristic.
 - Order range is limited to the player's current group/guild channel. Cross-realm order discovery is not possible without a relay.
 - No in-game channel-selection config yet.
 
@@ -114,7 +115,7 @@ ClassicCraftingOrders/
 │
 ├── Data/
 │   ├── Professions.lua             # Profession definitions + name→ID lookup tables
-│   └── RecipeDB.lua                # Static recipe database (~700 recipes)
+│   └── RecipeDB.lua                # Static recipe database (2,092 recipes — auto-generated)
 │
 ├── Core/
 │   ├── Database.lua                # AceDB wrapper, SavedVariables, profession cache
@@ -126,7 +127,7 @@ ClassicCraftingOrders/
 ├── UI/
 │   ├── MainDashboard.xml           # Bare frame declaration (CCO_Dashboard)
 │   ├── MainDashboard.lua           # Dashboard logic, backdrop, drag, nav buttons
-│   ├── RecipeBrowser.lua           # Recipe catalog + order posting form
+│   ├── RecipeBrowser.lua           # Recipe catalog + order posting form (v1.3 redesign)
 │   ├── OrderBoard.lua              # Crafter order table view
 │   └── StatusMonitor.lua           # Floating HUD for order state
 │
@@ -146,7 +147,7 @@ Bootstraps the addon, registers slash commands and defines global utility helper
 | Event | Action |
 |-------|--------|
 | `ADDON_LOADED` | `Database:Initialize()`, register addon message prefix |
-| `PLAYER_LOGIN` | Initialize all Core and UI modules in dependency order |
+| `PLAYER_LOGIN` | Initialize all Core and UI modules in dependency order; each wrapped in `pcall` to isolate failures |
 | `PLAYER_LOGOUT` | `Database:Save()` |
 
 **Public functions**
@@ -362,24 +363,46 @@ Authoritative list of crafting professions for TBC Classic. Gathering profession
 
 ### 5.8 `Data/RecipeDB.lua`
 
-Static recipe database indexed by `skillLineID`. The RecipeScanner fills in missing fields at runtime.
+Static recipe database auto-generated from **CraftLib v0.5.0** TBC recipe data. Contains **2,092 recipes** across all 9 crafting professions.
+
+> **Do not edit manually.** Re-generate with the bundled `convert_craftlib.py` script if recipe data needs updating.
+
+**Recipe counts by profession**
+
+| Profession | SkillLine ID | Recipes |
+|------------|-------------|---------|
+| Alchemy | 171 | 182 |
+| Blacksmithing | 164 | 375 |
+| Enchanting | 333 | 218 |
+| Engineering | 202 | 239 |
+| Jewelcrafting | 755 | 257 |
+| Leatherworking | 165 | 376 |
+| Tailoring | 197 | 314 |
+| Cooking | 185 | 116 |
+| First Aid | 129 | 15 |
+| **Total** | | **2,092** |
 
 **Entry structure**
 ```lua
 CCO.RecipeDB[skillLineID] = {
     {
-        spellID  = number,       -- may be nil until scanned
-        itemID   = number,       -- 0 for enchants, nil if unknown
+        spellID  = number,       -- may be nil until scanned live
+        itemID   = number,       -- 0 for enchants
         name     = string,
         minSkill = number,
-        source   = "trainer" | "drop" | "quest" | "vendor" | "world_drop",
+        source   = "trainer" | "vendor" | "drop" | "reputation" | "quest" | "discovery",
         reagents = { { itemID, count }, … },
     },
     …
 }
 ```
 
-Reagent item ID constants live in a file-local `R` table (`R.FELWEED = 22785`, …).
+**Helper functions** (defined in RecipeDB.lua, attached to the `CCO` namespace)
+
+| Function | Description |
+|----------|-------------|
+| `CCO:GetRecipesForSkill(skillLineID)` | Return recipe list for one profession, or `{}` |
+| `CCO:SearchRecipes(query)` | Case-insensitive substring search across all professions; returns `{ skillLineID, recipe }` pairs |
 
 ---
 
@@ -387,7 +410,7 @@ Reagent item ID constants live in a file-local `R` table (`R.FELWEED = 22785`, �
 
 The primary window. Opened with `/cco`.
 
-**XML (`MainDashboard.xml`)** declares only the bare `CCO_Dashboard` frame (360 × 460 px, strata HIGH, hidden). All visual and interactive setup is in Lua.
+**XML (`MainDashboard.xml`)** declares only the bare `CCO_Dashboard` frame (360 × 460 px, strata HIGH, hidden, `inherits="BackdropTemplate"`). All visual and interactive setup is in Lua.
 
 **Lua (`MainDashboard.lua`)**
 
@@ -396,9 +419,9 @@ The primary window. Opened with `/cco`.
 | `D:Initialize()` | Find `CCO_Dashboard`, apply background texture + `SetBackdrop`, create title-bar drag handle, close button, nav buttons |
 | `D:BuildNavButtons()` | Create 4 nav buttons; each gets `SetFrameLevel(parent + 10)` to ensure click events reach the button |
 | `D:BuildMyOrdersPanel()` | Scrollable list of the player's own active orders |
-| `D:ShowMyOrdersPanel()` | Show the "My Orders" sub-panel and refresh |
+| `D:ShowMyOrdersPanel()` | Toggle the "My Orders" sub-panel; hides Settings if open |
 | `D:RefreshMyOrders()` | Rebuild all rows in the My Orders scroll frame |
-| `D:ShowSettingsPanel()` | Toggle-create the settings panel with three checkboxes |
+| `D:ShowSettingsPanel()` | Toggle the settings panel with three checkboxes; hides My Orders if open |
 | `D:Toggle()` | Show/hide the window |
 | `D:Hide()` | Hide the window and persist its shown state |
 | `D:SavePosition()` | Write centre coordinates to `char.ui.dashboard.{x,y}` |
@@ -413,35 +436,49 @@ The primary window. Opened with `/cco`.
 
 ### 5.10 `UI/RecipeBrowser.lua`
 
-Recipe catalog where players create orders.
+Recipe catalog where players browse recipes and create orders. Redesigned in v1.3 with a `UIDropDownMenu` profession picker replacing the left sidebar.
 
-**Layout**
+**Layout (v1.3)**
 ```
-┌─────────┬────────────────────────────────────┐
-│ Prof.   │  [Search bar]                      │
-│ sidebar ├────────────────────────────────────┤
-│         │  Recipe list (scrollable)          │
-│         ├────────────────────────────────────┤
-│         │  Detail pane (icon, reagents)      │
-│         ├────────────────────────────────────┤
-│         │  Order form: commission + post btn │
-└─────────┴────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  Title bar                         [X]       │
+├─────────────────────────────────────────────┤
+│  [Profession ▼]  [Search…………]  [Clear]      │
+├──────┬──────────────────────┬──────┬────────┤
+│Recipe│                      │Source│ Skill  │
+├──────┴──────────────────────┴──────┴────────┤
+│  Recipe list (scrollable, full width)        │
+│  • alternating row backgrounds               │
+│  • difficulty-coloured names                 │
+│  • coloured source badges                    │
+│  • live-scan dot  ■  for scanner data        │
+├─────────────────────────────────────────────┤
+│  Detail pane: icon │ name │ skill │ reagents │
+├─────────────────────────────────────────────┤
+│  Commission: [__g] [__s] [__c]  ☑ Mats  [Post Order] │
+└─────────────────────────────────────────────┘
 ```
+
+**Profession dropdown** shows all 9 professions with:
+- Recipe count in grey `(182)`
+- Green `✓` if the player has that profession in their skill book
+
+**Global search** — when no profession is selected, typing in the search box searches all 2,092 recipes across every profession. Clicking a result auto-selects the matching profession in the dropdown.
 
 **Public functions**
 
 | Function | Description |
 |----------|-------------|
 | `RB:Initialize()` | Create all sub-frames |
-| `RB:OnDatabaseUpdated(skillLineID)` | Called by RecipeScanner; refreshes if profession matches |
-| `RB:RebuildProfessionTabs()` | Rebuild sidebar from `CCO.Database:GetProfessions()` |
-| `RB:SelectProfession(skillLineID)` | Set active profession, populate recipe list |
-| `RB:PopulateRecipeList([filter])` | Build recipe rows from `RecipeScanner:GetSortedRecipes()` |
+| `RB:OnDatabaseUpdated(skillLineID)` | Called by RecipeScanner; refreshes list if profession matches |
+| `RB:SelectProfession(skillLineID)` | Set active profession, reset search, populate recipe list |
+| `RB:PopulateRecipeList([filter])` | Build recipe rows; prefers live scanner data, falls back to static DB |
 | `RB:GetDifficultyColor(minSkill, rank)` | Return `r,g,b` using Classic traffic-light scale |
 | `RB:ShowRecipeDetail(recipe)` | Fill detail pane (icon, name, skill req, reagents) |
-| `RB:ApplySearchFilter(text)` | Re-run `PopulateRecipeList` with a filter string |
+| `RB:ApplySearchFilter(text)` | Re-run `PopulateRecipeList` or trigger `GlobalSearch` |
+| `RB:GlobalSearch(text)` | Cross-profession name search; clicking a result switches profession |
 | `RB:PostOrder()` | Read commission inputs, call `OrderManager:PostOrder()` |
-| `RB:Toggle()` | Show/hide; rebuilds tabs and auto-selects first profession |
+| `RB:Toggle()` | Show/hide; auto-selects player's first known profession on open |
 
 **Difficulty colours**
 
@@ -452,6 +489,17 @@ Recipe catalog where players create orders.
 | 10 – 24 | Yellow |
 | 25 – 49 | Green |
 | ≥ 50 | Grey (trivial) |
+
+**Source badge colours**
+
+| Source | Colour |
+|--------|--------|
+| trainer | Light blue |
+| vendor | Yellow |
+| drop | Orange |
+| reputation | Purple |
+| quest | Bright yellow |
+| discovery | Teal |
 
 ---
 
@@ -599,21 +647,22 @@ All values are serialized as strings. The characters `|`, `;`, `=` inside values
 
 ## 9. TBC Classic API Compatibility
 
-Several APIs present in retail WoW **do not exist in TBC Classic 20504**. The table below documents every compatibility decision in the codebase.
+TBC Classic Anniversary uses the **Shadowlands-era game client**. Several APIs behave differently from both retail and vanilla Classic. The table below documents every compatibility decision in the codebase.
 
-| API | TBC Classic | Decision |
-|-----|-------------|----------|
-| `Texture:SetColorTexture(r,g,b,a)` | ❌ Retail-only | Use `SetTexture("WHITE8X8")` + `SetVertexColor()` + `SetAlpha()` |
-| `"BackdropTemplate"` in `CreateFrame` | ❌ Shadowlands+ | Removed; `SetBackdrop({})` is native on all frames in TBC |
-| `Texture:SetHorizTile()` / `SetVertTile()` | ❌ Retail-only | Not used |
-| `Frame:SetBackdrop({…})` | ✅ Native TBC | Used with a `CreateTexture` solid-colour fallback in case the call produces no visible result |
-| `Frame:SetBackdropColor()` | ✅ Native TBC | Used; colour kept at mid-brightness to be visible |
-| `Frame:SetToplevel(true)` | ✅ All versions | Used on Main Dashboard |
-| `C_ChatInfo.SendAddonMessage()` | ✅ Available | Primary communication channel |
-| `C_ChatInfo.RegisterAddonMessagePrefix()` | ✅ Available | Called on `ADDON_LOADED` |
+| API | Status | Decision |
+|-----|--------|----------|
+| `Frame:SetBackdrop({…})` | ⚠️ Requires `BackdropTemplate` | In the Shadowlands client `SetBackdrop` was moved into `BackdropTemplateMixin`. **All** frames that call `SetBackdrop` must pass `"BackdropTemplate"` to `CreateFrame()` or declare `inherits="BackdropTemplate"` in XML |
+| `Texture:SetColorTexture(r,g,b,a)` | ❌ Retail-only | Use `SetTexture("Interface\\Buttons\\WHITE8X8")` + `SetVertexColor()` |
+| `"SearchBoxTemplate"` in `CreateFrame` | ❌ Cataclysm+ | Use `"InputBoxTemplate"` with manual placeholder text logic |
+| `C_Timer.NewTimer()` | ❌ WoD+ | Use a `CreateFrame("Frame")` + `OnUpdate` countdown instead |
+| `GetItemInfoInstant()` | ❌ MoP+ | **Not available.** Use `GetTradeSkillReagentItemLink(i, r)` for reagent IDs |
+| `GameTooltip:SetItemByID()` | ❌ Legion+ | Use `GetItemInfo(id)` to get the item link, then `GameTooltip:SetHyperlink(link)` |
+| `IsInGroup()` | ❌ Cataclysm+ | Use `GetNumPartyMembers() > 0` |
+| `C_ChatInfo.SendAddonMessage()` | ✅ Available | Primary channel; falls back to `SendAddonMessage()` if `C_ChatInfo` is nil |
+| `C_ChatInfo.RegisterAddonMessagePrefix()` | ✅ Available | Falls back to `RegisterAddonMessagePrefix()` |
 | `GetTradeSkillInfo()` / `GetTradeSkillItemLink()` | ✅ Classic API | Used in RecipeScanner |
-| `GetTradeSkillReagentInfo()` | ✅ Classic API | Used in RecipeScanner |
-| `GetItemInfoInstant()` | ✅ Available since TBC | Used for reagent ID fallback lookup |
+| `GetTradeSkillReagentInfo()` / `GetTradeSkillReagentItemLink()` | ✅ Classic API | Used in RecipeScanner for reagent data |
+| `UIDropDownMenu_Initialize()` / `UIDropDownMenu_AddButton()` | ✅ All WoW versions | Used for the profession picker in RecipeBrowser |
 
 **Separator / rule textures** — always use this pattern:
 ```lua
@@ -623,16 +672,24 @@ line:SetVertexColor(r, g, b)
 line:SetAlpha(a)
 ```
 
+**`pcall` in PLAYER_LOGIN** — all `module:Initialize()` calls are wrapped in a `safeInit()` helper so a crash in one module does not prevent subsequent modules from loading:
+```lua
+local function safeInit(module, name)
+    local ok, err = pcall(function() module:Initialize() end)
+    if not ok then CCO:PrintError(name .. " init error: " .. tostring(err)) end
+end
+```
+
 ---
 
 ## 10. Known Limitations
 
-- **`minSkill` from live scan** — TBC has no direct API to read the required skill level from a tradeskill entry. The scanner stores the difficulty colour category as `skillType` but not the exact threshold. Static DB values are used where available; scanner-only recipes show `minSkill = 0` until patched manually.
+- **`minSkill` from live scan** — TBC has no direct API to read the required skill level from a tradeskill entry. The scanner stores the difficulty colour category as `skillType` but not the exact threshold. Static DB values (from CraftLib) are used where available; scanner-only recipes show `minSkill = 0` until patched manually.
 - **Order range** — limited to the player's current GUILD / RAID / PARTY channel; YELL is the fallback (~300 yard radius). No cross-realm broadcast.
 - **Enchanting** — enchants produce no item (`itemID = 0`). Tooltips call `GetItemInfo(0)` which returns nil; a question-mark icon is shown as fallback.
-- **`GetItemInfoInstant` cold cache** — returns `nil` for items the client has never seen. Reagent icons fall back to a question mark until the item is cached.
+- **Item icon cold cache** — `GetItemInfo()` returns `nil` for items the client has never seen before. Reagent icons fall back to a question mark until the item is cached by the game client.
 - **AceDB stub** — the embedded AceDB-3.0 is a minimal stub. Full profile switching and cross-character data sharing are not implemented.
-- **Version 1.0.0 / 1.1.0 mismatch** — `ClassicCraftingOrders.lua` still reports `CCO.version = "1.0.0"` while the TOC is `Version: 1.1.0`. Should be aligned before release.
+- **`spellID` in static DB** — CraftLib stores `id` (spell ID) for every recipe. This is mapped to `spellID` in RecipeDB. For recipes only known via live scan, `spellID` is filled in at runtime by `RecipeScanner:ScanCurrentTradeskill()`.
 
 ---
 
@@ -650,6 +707,16 @@ line:SetAlpha(a)
 
 ## 12. Extending the Addon
 
+### Regenerating the recipe database
+
+The recipe database is auto-generated from CraftLib. To regenerate after updating CraftLib:
+
+```bash
+python3 convert_craftlib.py
+```
+
+The script reads all `Data/TBC/*/Recipes.lua` files from the CraftLib directory and writes a fresh `Data/RecipeDB.lua`.
+
 ### Adding a new locale
 
 1. Create `Localization/xxXX.lua` (e.g. `esES.lua`)
@@ -665,7 +732,7 @@ line:SetAlpha(a)
    if prof.nameES then CCO.ProfessionsByName[prof.nameES] = id end
    ```
 
-### Adding new static recipes
+### Adding new static recipes manually
 
 Edit `Data/RecipeDB.lua`. Add entries to the relevant profession table:
 
@@ -673,12 +740,12 @@ Edit `Data/RecipeDB.lua`. Add entries to the relevant profession table:
 CCO.RecipeDB[171] = {          -- 171 = Alchemy
     { spellID = 12345, itemID = 67890, name = "Super Flask",
       minSkill = 350, source = "trainer",
-      reagents = { {R.FELWEED, 4}, {R.FEL_LOTUS, 1}, {R.IMBUED_VIAL, 1} } },
+      reagents = { {22785, 4}, {22789, 1}, {28570, 1} } },
     …
 }
 ```
 
-Add unknown reagents to the `local R = { … }` constants block at the top of the file.
+Note: reagents use plain `{itemID, count}` arrays (no named `R.` constants in the generated file).
 
 ### Subscribing to order events
 

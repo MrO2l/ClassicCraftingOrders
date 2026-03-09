@@ -22,23 +22,45 @@ bootstrapFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         -- Initialize database FIRST so other modules can read defaults
         CCO.Database:Initialize()
-        -- Register the hidden communication channel prefix
-        C_ChatInfo.RegisterAddonMessagePrefix(CCO.prefix)
+        -- Register the hidden communication channel prefix.
+        -- C_ChatInfo is available in TBC Classic Anniversary (modern client),
+        -- but we add a fallback for older build variants just in case.
+        if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+            C_ChatInfo.RegisterAddonMessagePrefix(CCO.prefix)
+        elseif RegisterAddonMessagePrefix then
+            RegisterAddonMessagePrefix(CCO.prefix)
+        end
         CCO:Print(CCO.L["ADDON_LOADED_MSG"])
 
     elseif event == "PLAYER_LOGIN" then
-        -- All sub-systems are ready; build UI and start listening
-        CCO.Communication:Initialize()
-        CCO.OrderManager:Initialize()
+        -- All sub-systems are ready; build UI and start listening.
+        -- Each module is wrapped in pcall so a crash in one does NOT prevent
+        -- the others from initialising (e.g. a missing TBC Classic template
+        -- in RecipeBrowser must not also break OrderBoard).
+        local function safeInit(module, name)
+            if not module then
+                CCO:PrintError(name .. " module missing – check load order.")
+                return
+            end
+            local ok, err = pcall(function() module:Initialize() end)
+            if not ok then
+                CCO:PrintError(name .. " init error: " .. tostring(err))
+            end
+        end
+
+        safeInit(CCO.Communication,    "Communication")
+        safeInit(CCO.OrderManager,     "OrderManager")
         -- RecipeScanner must init before UI so it can respond to tradeskill events
-        CCO.RecipeScanner:Initialize()
-        CCO.TradeAssistant:Initialize()
-        CCO.UI.Dashboard:Initialize()
-        CCO.UI.RecipeBrowser:Initialize()
-        CCO.UI.OrderBoard:Initialize()
-        CCO.UI.StatusMonitor:Initialize()
+        safeInit(CCO.RecipeScanner,    "RecipeScanner")
+        safeInit(CCO.TradeAssistant,   "TradeAssistant")
+        safeInit(CCO.UI.Dashboard,     "Dashboard")
+        safeInit(CCO.UI.RecipeBrowser, "RecipeBrowser")
+        safeInit(CCO.UI.OrderBoard,    "OrderBoard")
+        safeInit(CCO.UI.StatusMonitor, "StatusMonitor")
         -- Announce presence to nearby addon users
-        CCO.Communication:AnnouncePresence()
+        if CCO.Communication and CCO.Communication.AnnouncePresence then
+            pcall(function() CCO.Communication:AnnouncePresence() end)
+        end
 
     elseif event == "PLAYER_LOGOUT" then
         CCO.Database:Save()

@@ -33,26 +33,20 @@ local function ApplyBackground(f)
     bg:SetVertexColor(0.09, 0.09, 0.14)
     bg:SetAlpha(0.97)
 
-    -- Also try the nicer tiled dialog texture via SetBackdrop.
+    -- SetBackdrop is now available because CCO_Dashboard inherits BackdropTemplate in XML.
     -- This adds the proper dialog border and tiled grey background.
-    -- SetBackdrop is native on all frames in TBC Classic 2.5.x.
-    if f.SetBackdrop then
-        f:SetBackdrop({
-            bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile     = true,
-            tileSize = 32,
-            edgeSize = 32,
-            insets   = { left = 11, right = 12, top = 12, bottom = 11 },
-        })
-        -- Use a visible mid-grey tint (pure white = texture as-is).
-        -- Do NOT use 0.08 – the texture is already dark; that would make
-        -- it nearly invisible.
-        f:SetBackdropColor(0.22, 0.22, 0.30, 0.96)
-        if f.SetBackdropBorderColor then
-            f:SetBackdropBorderColor(0.55, 0.55, 0.65, 1.0)
-        end
-    end
+    f:SetBackdrop({
+        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile     = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets   = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+    -- Use a visible mid-grey tint (pure white = texture as-is).
+    -- Do NOT use 0.08 – the texture is already dark; that would make it nearly invisible.
+    f:SetBackdropColor(0.22, 0.22, 0.30, 0.96)
+    f:SetBackdropBorderColor(0.55, 0.55, 0.65, 1.0)
 end
 
 -- ============================================================
@@ -176,26 +170,59 @@ end
 -- ============================================================
 function D:BuildMyOrdersPanel()
     local f     = D.frame
-    local panel = CreateFrame("Frame", nil, f)
+    local panel = CreateFrame("Frame", nil, f, "BackdropTemplate")
     panel:SetPoint("TOPLEFT",     f, "TOPLEFT",      14, -220)
     panel:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14,  40)
     panel:Hide()
     D.myOrdersPanel = panel
 
+    -- Solid background so the panel is visible (not a transparent ghost frame)
+    local bg = panel:CreateTexture(nil, "BACKGROUND", nil, -8)
+    bg:SetAllPoints(panel)
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(0.07, 0.07, 0.10)
+    bg:SetAlpha(0.96)
+    -- BackdropTemplate is set on this panel's CreateFrame call, so SetBackdrop is available.
+    panel:SetBackdrop({
+        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile     = true, tileSize = 32, edgeSize = 12,
+        insets   = { left=2, right=2, top=2, bottom=2 },
+    })
+    panel:SetBackdropColor(0.10, 0.10, 0.14, 0.95)
+
     local hdr = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hdr:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    hdr:SetPoint("TOPLEFT", panel, "TOPLEFT", 6, -6)
     hdr:SetText(CCO.L["BTN_MY_ORDERS"])
+
+    -- Visible separator under the header
+    local sep = panel:CreateTexture(nil, "ARTWORK")
+    sep:SetPoint("TOPLEFT",  panel, "TOPLEFT",  6, -22)
+    sep:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -6, -22)
+    sep:SetHeight(1)
+    sep:SetTexture("Interface\\Buttons\\WHITE8X8")
+    sep:SetVertexColor(0.45, 0.45, 0.55)
+    sep:SetAlpha(0.7)
 
     local sf = CreateFrame("ScrollFrame", "CCO_MyOrdersScroll", panel,
                            "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",      0, -22)
-    sf:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -24,  0)
+    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",      0, -28)
+    sf:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -24,  6)
     D.myOrdersScrollFrame = sf
 
     local content = CreateFrame("Frame", nil, sf)
     content:SetSize(sf:GetWidth() or 300, 1)
     sf:SetScrollChild(content)
     D.myOrdersContent = content
+
+    -- Empty-state label (shown when there are no active orders)
+    local emptyLbl = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    emptyLbl:SetPoint("CENTER", content, "CENTER", 0, -20)
+    emptyLbl:SetWidth(260)
+    emptyLbl:SetJustifyH("CENTER")
+    emptyLbl:SetTextColor(0.55, 0.55, 0.55)
+    emptyLbl:SetText("You have no active crafting orders.")
+    D.myOrdersEmptyLabel = emptyLbl
 
     CCO.OrderManager:RegisterCallback("onOrderAdded",   function() D:RefreshMyOrders() end)
     CCO.OrderManager:RegisterCallback("onOrderRemoved", function() D:RefreshMyOrders() end)
@@ -204,8 +231,16 @@ end
 
 function D:ShowMyOrdersPanel()
     if not D.myOrdersPanel then return end
-    D.myOrdersPanel:Show()
-    D:RefreshMyOrders()
+    -- Mutual exclusion: hide Settings panel when My Orders is shown
+    if D.settingsPanel and D.settingsPanel:IsShown() then
+        D.settingsPanel:Hide()
+    end
+    -- Toggle: clicking again closes the panel
+    local nowShown = not D.myOrdersPanel:IsShown()
+    D.myOrdersPanel:SetShown(nowShown)
+    if nowShown then
+        D:RefreshMyOrders()
+    end
 end
 
 function D:RefreshMyOrders()
@@ -218,6 +253,13 @@ function D:RefreshMyOrders()
     end
 
     local myOrders = CCO.OrderManager:GetMyOrders()
+    local orderCount = 0
+    for _ in pairs(myOrders) do orderCount = orderCount + 1 end
+
+    if D.myOrdersEmptyLabel then
+        D.myOrdersEmptyLabel:SetShown(orderCount == 0)
+    end
+
     local yOffset  = 0
     local rowH     = 28
 
@@ -257,23 +299,27 @@ end
 -- Settings Panel
 -- ============================================================
 function D:ShowSettingsPanel()
+    -- Mutual exclusion: hide My Orders panel when Settings is shown
+    if D.myOrdersPanel and D.myOrdersPanel:IsShown() then
+        D.myOrdersPanel:Hide()
+    end
     if D.settingsPanel then
         D.settingsPanel:SetShown(not D.settingsPanel:IsShown())
         return
     end
 
     local f  = D.frame
-    local sp = CreateFrame("Frame", nil, f)
+    local sp = CreateFrame("Frame", nil, f, "BackdropTemplate")
     sp:SetPoint("TOPLEFT",     f, "TOPLEFT",      14, -220)
     sp:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14,  40)
     -- Background for settings panel
-    if sp.SetBackdrop then
-        sp:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            tile   = true, tileSize = 8,
-        })
-        sp:SetBackdropColor(0.06, 0.06, 0.09, 0.85)
-    end
+    sp:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 32, edgeSize = 12,
+        insets = { left=2, right=2, top=2, bottom=2 },
+    })
+    sp:SetBackdropColor(0.10, 0.10, 0.14, 0.95)
     D.settingsPanel = sp
 
     MakeSeparator(f, 14, -14, -218)
