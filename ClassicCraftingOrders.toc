@@ -1,0 +1,42 @@
+## Interface: 20504
+## Title: ClassicCraftingOrders
+## Notes: Peer-to-Peer crafting order system for TBC Classic Anniversary
+## Author: ClassicCraftingOrders
+## Version: 1.1.0
+## DefaultState: enabled
+## SavedVariables: ClassicCraftingOrdersDB
+
+## OptionalDeps: LibStub, CallbackHandler-1.0, AceDB-3.0, LibSharedMedia-3.0
+
+## X-Website: https://github.com/ClassicCraftingOrders
+## X-Category: Tradeskill
+
+# Libraries
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\AceDB-3.0\AceDB-3.0.lua
+
+# Localization  (loaded early so all modules can use CCO.L)
+Localization\enUS.lua
+Localization\deDE.lua
+
+# Data  -- MUST load before Core modules that reference CCO.Professions / CCO.RecipeDB
+Data\Professions.lua
+Data\RecipeDB.lua
+
+# Core
+Core\Database.lua
+Core\Communication.lua
+Core\OrderManager.lua
+Core\RecipeScanner.lua
+Core\TradeAssistant.lua
+
+# UI
+UI\MainDashboard.xml
+UI\MainDashboard.lua
+UI\RecipeBrowser.lua
+UI\OrderBoard.lua
+UI\StatusMonitor.lua
+
+# Main
+ClassicCraftingOrders.lua

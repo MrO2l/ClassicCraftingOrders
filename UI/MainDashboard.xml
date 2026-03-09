@@ -1,0 +1,28 @@
+<!-- ============================================================
+     ClassicCraftingOrders - Main Dashboard Frame (minimal XML)
+
+     Only the bare frame is declared here.  Every property
+     (backdrop, drag, buttons, title) is set up in Lua so we have
+     full control and no locale / load-order timing problems.
+
+     BUG: do NOT set enableMouse="true" or movable="true" here –
+     those attributes combined with child buttons in some TBC Classic
+     builds cause the parent frame to intercept mouse events before
+     child buttons can receive them.  All mouse setup is done in Lua
+     through a dedicated title-bar sub-frame (see MainDashboard.lua).
+     ============================================================ -->
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\..\FrameXML\UI.xsd">
+
+    <Frame name="CCO_Dashboard" parent="UIParent"
+           frameStrata="HIGH" hidden="true">
+
+        <Size x="360" y="460"/>
+        <Anchors>
+            <Anchor point="CENTER"/>
+        </Anchors>
+
+    </Frame>
+
+</Ui>
